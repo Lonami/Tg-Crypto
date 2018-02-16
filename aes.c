@@ -232,6 +232,14 @@ void AES_ctx_set_iv(struct AES_ctx* ctx, const uint8_t* iv)
 }
 #endif
 
+#if (defined(IGE) && (IGE == 1))
+void AES_init_ctx_iv32(struct AES_ctx* ctx, const uint8_t* key, const uint8_t* iv)
+{
+  KeyExpansion(ctx->RoundKey, key);
+  memcpy (ctx->Iv, iv, 2 * AES_BLOCKLEN);
+}
+#endif
+
 // This function adds the round key to state.
 // The round key is added to the state by an XOR function.
 static void AddRoundKey(uint8_t round, state_t* state, const uint8_t* RoundKey)
@@ -465,8 +473,6 @@ static void InvCipher(state_t* state, const uint8_t* RoundKey)
 /* Public functions:                                                         */
 /*****************************************************************************/
 #if defined(ECB) && (ECB == 1)
-
-
 void AES_ECB_encrypt(const struct AES_ctx* ctx, uint8_t* buf)
 {
   // The next function call encrypts the PlainText with the Key using AES algorithm.
@@ -478,17 +484,9 @@ void AES_ECB_decrypt(const struct AES_ctx* ctx, uint8_t* buf)
   // The next function call decrypts the PlainText with the Key using AES algorithm.
   InvCipher((state_t*)buf, ctx->RoundKey);
 }
-
-
 #endif // #if defined(ECB) && (ECB == 1)
 
-
-
-
-
 #if defined(CBC) && (CBC == 1)
-
-
 static void XorWithIv(uint8_t* buf, const uint8_t* Iv)
 {
   uint8_t i;
@@ -527,13 +525,9 @@ void AES_CBC_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
   }
 
 }
-
 #endif // #if defined(CBC) && (CBC == 1)
 
-
-
 #if defined(CTR) && (CTR == 1)
-
 /* Symmetrical operation: same function for encrypting as for decrypting. Note any IV/nonce should never be reused with the same key */
 void AES_CTR_xcrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
 {
@@ -567,6 +561,51 @@ void AES_CTR_xcrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
     buf[i] = (buf[i] ^ buffer[bi]);
   }
 }
-
 #endif // #if defined(CTR) && (CTR == 1)
+
+#if defined(IGE) && (IGE == 1)
+void AES_IGE_encrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, uint32_t length)
+{
+  uintptr_t i;
+  uint8_t tmp[AES_BLOCKLEN];
+  uint8_t *Iv1 = (ctx->Iv);
+  uint8_t *Iv2 = (ctx->Iv + AES_BLOCKLEN);
+
+  for (i = 0; i < length; i += AES_BLOCKLEN)
+  {
+    memcpy(tmp, buf, AES_BLOCKLEN);
+
+    XorWithIv(buf, Iv1);
+    Cipher((state_t*)buf, ctx->RoundKey);
+    XorWithIv(buf, Iv2);
+
+    Iv1 = buf;
+    memcpy(Iv2, tmp, AES_BLOCKLEN);
+    buf += AES_BLOCKLEN;
+  }
+  memcpy(ctx->Iv, Iv1, AES_BLOCKLEN);
+}
+
+void AES_IGE_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, uint32_t length)
+{
+  uintptr_t i;
+  uint8_t tmp[AES_BLOCKLEN];
+  uint8_t *Iv1 = (ctx->Iv);
+  uint8_t *Iv2 = (ctx->Iv + AES_BLOCKLEN);
+
+  for (i = 0; i < length; i += AES_BLOCKLEN)
+  {
+    memcpy(tmp, buf, AES_BLOCKLEN);
+
+    XorWithIv(buf, Iv2);
+    InvCipher((state_t*)buf, ctx->RoundKey);
+    XorWithIv(buf, Iv1);
+
+    memcpy(Iv1, tmp, AES_BLOCKLEN);
+    Iv2 = buf;
+    buf += AES_BLOCKLEN;
+  }
+  memcpy(ctx->Iv + AES_BLOCKLEN, Iv2, AES_BLOCKLEN);
+}
+#endif // #if defined(IGE) && (IGE == 1)
 
